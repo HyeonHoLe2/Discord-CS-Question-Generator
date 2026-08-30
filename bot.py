@@ -91,7 +91,7 @@ async def generate_question_with_gemini(filepath):
     )
 
     response = await gemini_client.aio.models.generate_content(
-        model="gemini-3.0-flash",
+        model="gemini-3.7-flash",
         contents=prompt,
     )
     return response.text
