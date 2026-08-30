@@ -9,8 +9,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
+import google.generativeai as genai
 
 load_dotenv()
+
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
 REPO_PATH = str(Path(__file__).parent / "data")
 SETTINGS_FILE = str(Path(__file__).parent / "settings.json")
@@ -56,7 +60,7 @@ def get_md_files(categories):
     return files
 
 
-def parse_md_preview(filepath):
+def clean_md_content(filepath):
     with open(filepath, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -64,22 +68,50 @@ def parse_md_preview(filepath):
     content = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', content)
     content = re.sub(r'<br\s*/?>', '\n', content)
     content = re.sub(r'<[^>]+>', '', content)
-    content = re.sub(r'^#{4,6}\s+(.+)$', r'### \1', content, flags=re.MULTILINE)
     content = re.sub(r'\n{3,}', '\n\n', content).strip()
 
-    if len(content) > 2000:
-        content = content[:2000] + "\n\n*... 내용이 길어 생략됐어요*"
+    if len(content) > 4000:
+        content = content[:4000]
     return content
 
 
-def make_question_embed(filepath):
+async def generate_question_with_gemini(filepath):
+    topic = filepath.stem
+    content = clean_md_content(filepath)
+
+    prompt = (
+        f"다음은 '{topic}' 주제에 관한 CS 면접 학습 자료입니다.\n\n"
+        f"---\n{content}\n---\n\n"
+        "이 자료를 바탕으로 실제 면접에서 나올 법한 질문 1개와 핵심 답변 포인트 3~5개를 한국어로 작성해주세요.\n\n"
+        "다음 형식으로만 작성해주세요 (다른 설명 없이):\n"
+        "**질문**: (면접 질문)\n\n"
+        "**핵심 답변**:\n"
+        "• (답변 포인트 1)\n"
+        "• (답변 포인트 2)\n"
+        "• (답변 포인트 3)"
+    )
+
+    response = await gemini_model.generate_content_async(prompt)
+    return response.text
+
+
+async def make_question_embed(filepath):
     topic = filepath.stem
     parent = filepath.parent.name
-    content = parse_md_preview(filepath)
+
+    try:
+        description = await generate_question_with_gemini(filepath)
+    except Exception as e:
+        print(f"Claude API 오류 ({topic}): {e}")
+        content = clean_md_content(filepath)
+        content = re.sub(r'^#{4,6}\s+(.+)$', r'### \1', content, flags=re.MULTILINE)
+        if len(content) > 2000:
+            content = content[:2000] + "\n\n*... 내용이 길어 생략됐어요*"
+        description = content
 
     embed = discord.Embed(
         title=f"📚 {topic}",
-        description=content,
+        description=description,
         color=0x5865F2,
     )
     embed.set_footer(text=f"📂 {parent}")
@@ -137,7 +169,7 @@ async def daily_question():
 
         await channel.send(f"🌅 **오늘의 면접 준비** ({now.strftime('%Y-%m-%d')})")
         for fp in selected:
-            embed = make_question_embed(fp)
+            embed = await make_question_embed(fp)
             await channel.send(embed=embed)
 
 
@@ -158,8 +190,9 @@ async def get_question(interaction: discord.Interaction, category: str = None):
         await interaction.response.send_message("문제를 찾을 수 없어요.", ephemeral=True)
         return
 
-    embed = make_question_embed(random.choice(files))
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.defer()
+    embed = await make_question_embed(random.choice(files))
+    await interaction.followup.send(embed=embed)
 
 
 # ── /설정 ──────────────────────────────────────────────────────────────────────
