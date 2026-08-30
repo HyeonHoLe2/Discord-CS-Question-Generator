@@ -4,6 +4,7 @@ import random
 import re
 from pathlib import Path
 from datetime import datetime
+import urllib.parse
 
 import discord
 from discord import app_commands
@@ -120,6 +121,15 @@ async def make_question_embed(filepath):
     return embed
 
 
+GITHUB_BASE = "https://github.com/gyoogle/tech-interview-for-developer/blob/master"
+
+
+def get_github_url(filepath):
+    relative = filepath.relative_to(Path(REPO_PATH))
+    encoded = urllib.parse.quote(str(relative).replace("\\", "/"))
+    return f"{GITHUB_BASE}/{encoded}"
+
+
 def find_md_file_by_topic(topic):
     for folder in CATEGORIES.values():
         path = Path(REPO_PATH) / folder
@@ -176,6 +186,8 @@ async def on_message(message):
 
     md_content = clean_md_content(md_file)
 
+    github_url = get_github_url(md_file)
+
     async with message.channel.typing():
         try:
             evaluation = await evaluate_answer_with_gemini(topic, md_content, user_answer)
@@ -183,7 +195,7 @@ async def on_message(message):
             print(f"채점 오류: {e}")
             evaluation = "채점 중 오류가 발생했어요. 잠시 후 다시 시도해주세요."
 
-    await message.reply(evaluation)
+    await message.reply(f"{evaluation}\n\n📄 **원본 자료**: {github_url}")
 
 
 @bot.event
