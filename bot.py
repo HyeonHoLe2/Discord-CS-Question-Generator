@@ -120,17 +120,27 @@ async def make_question_embed(filepath):
     return embed
 
 
-async def evaluate_answer_with_gemini(topic, question_content, user_answer):
+def find_md_file_by_topic(topic):
+    for folder in CATEGORIES.values():
+        path = Path(REPO_PATH) / folder
+        if path.exists():
+            for md in path.rglob("*.md"):
+                if md.stem == topic and md.name != "README.md":
+                    return md
+    return None
+
+
+async def evaluate_answer_with_gemini(topic, md_content, user_answer):
     prompt = (
         f"주제: {topic}\n\n"
-        f"면접 문제와 핵심 답변 기준:\n{question_content}\n\n"
+        f"다음은 '{topic}'에 관한 원본 학습 자료입니다:\n\n{md_content}\n\n"
         f"지원자 답변: {user_answer}\n\n"
-        "위 핵심 답변을 기준으로 지원자의 답변을 평가해주세요.\n\n"
+        "위 학습 자료를 근거로 지원자의 답변을 평가해주세요.\n\n"
         "다음 형식으로만 작성해주세요:\n"
-        "**유사도**: X% (핵심 포인트 반영 비율 기준)\n\n"
+        "**유사도**: X% (학습 자료의 핵심 내용 반영 비율 기준)\n\n"
         "**잘한 점**: (답변에서 언급된 핵심 내용)\n\n"
         "**보완할 점**: (놓친 핵심 내용)\n\n"
-        "**모범 답안**: (간결한 모범 답변)"
+        "**모범 답안**: (학습 자료 기반 간결한 모범 답변)"
     )
     response = await gemini_client.aio.models.generate_content(
         model="gemini-3.5-flash",
@@ -154,15 +164,21 @@ async def on_message(message):
         return
 
     embed = ref.embeds[0]
-    topic = embed.title.replace("📚 ", "") if embed.title else "알 수 없음"
-    question_content = embed.description or ""
+    topic = embed.title.replace("📚 ", "") if embed.title else None
     user_answer = message.content
-    if not user_answer:
+    if not topic or not user_answer:
         return
+
+    md_file = find_md_file_by_topic(topic)
+    if not md_file:
+        await message.reply("원본 문서를 찾을 수 없어요.")
+        return
+
+    md_content = clean_md_content(md_file)
 
     async with message.channel.typing():
         try:
-            evaluation = await evaluate_answer_with_gemini(topic, question_content, user_answer)
+            evaluation = await evaluate_answer_with_gemini(topic, md_content, user_answer)
         except Exception as e:
             print(f"채점 오류: {e}")
             evaluation = "채점 중 오류가 발생했어요. 잠시 후 다시 시도해주세요."
