@@ -9,12 +9,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 REPO_PATH = str(Path(__file__).parent / "data")
 SETTINGS_FILE = str(Path(__file__).parent / "settings.json")
@@ -91,7 +90,10 @@ async def generate_question_with_gemini(filepath):
         "• (답변 포인트 3)"
     )
 
-    response = await gemini_model.generate_content_async(prompt)
+    response = await gemini_client.aio.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt,
+    )
     return response.text
 
 
