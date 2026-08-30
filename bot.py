@@ -33,6 +33,20 @@ CATEGORIES = {
     "리눅스": "Linux",
 }
 
+CATEGORY_EN = {
+    "알고리즘": "Algorithm",
+    "자료구조": "Data Structure",
+    "데이터베이스": "Database",
+    "네트워크": "Network",
+    "운영체제": "Operating System",
+    "소프트웨어공학": "Software Engineering",
+    "컴퓨터구조": "Computer Architecture",
+    "디자인패턴": "Design Pattern",
+    "언어": "Language",
+    "웹": "Web",
+    "리눅스": "Linux",
+}
+
 
 def load_settings():
     if os.path.exists(SETTINGS_FILE):
@@ -249,24 +263,41 @@ async def daily_question():
 
 # ── /문제 ──────────────────────────────────────────────────────────────────────
 
-@bot.tree.command(name="문제", description="랜덤 면접 문제를 가져옵니다")
-@app_commands.describe(category="카테고리 (비워두면 설정된 카테고리 사용)")
-@app_commands.choices(category=[
-    app_commands.Choice(name=k, value=k) for k in CATEGORIES
-])
-async def get_question(interaction: discord.Interaction, category: str = None):
-    settings = load_settings()
-    gs = settings.get(str(interaction.guild_id), {})
-    cats = [category] if category else gs.get("categories", list(CATEGORIES.keys()))
-
-    files = get_md_files(cats)
+async def send_question(interaction: discord.Interaction, category: str):
+    files = get_md_files([category])
     if not files:
         await interaction.response.send_message("문제를 찾을 수 없어요.", ephemeral=True)
         return
-
     await interaction.response.defer()
     embed = await make_question_embed(random.choice(files))
     await interaction.followup.send(embed=embed)
+
+
+class CategorySelectView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+        options = [
+            discord.SelectOption(label=CATEGORY_EN[ko], value=ko, description=ko)
+            for ko in CATEGORIES
+        ]
+        select = discord.ui.Select(
+            placeholder="카테고리를 선택하세요",
+            min_values=1,
+            max_values=1,
+            options=options,
+        )
+        select.callback = self.on_select
+        self.add_item(select)
+
+    async def on_select(self, interaction: discord.Interaction):
+        await send_question(interaction, self.children[0].values[0])
+
+
+@bot.tree.command(name="문제", description="카테고리를 선택하고 면접 문제를 받습니다")
+async def get_question(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        "📂 카테고리를 선택하세요:", view=CategorySelectView(), ephemeral=True
+    )
 
 
 # ── /설정 ──────────────────────────────────────────────────────────────────────
